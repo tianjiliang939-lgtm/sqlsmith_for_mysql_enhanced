@@ -99,13 +99,6 @@ make -j
 - FOUND_ROWS 过滤：`--exclude-found_rows` 开启时将剔除该系统函数（仅过滤生成）；不影响其他函数。
 - 语句类开关均默认关闭；未显式开启时以 SELECT 为主。
 
-## 版本信息与验证
-- 版本信息头文件（gitrev.h）三要素与组合字符串：
-  - DATE_UTC：`2025-10-14T07:09:51Z`
-  - SHORT_SHA：`nogit`
-  - SUBJECT：`readme-update-all-features`
-  - 组合字符串：`2025-10-14T07:09:51Z-nogit-readme-update-all-features`（兼容宏：`GITREV`）
-
 ## 贡献与维护
 - 代码风格与文件布局保持与原项目一致；新增/扩展源码位于根目录，与现有 `expr.cc/grammar.cc/mysql.cc` 同级；集合操作生成器文件统一命名为 `setops_generator.hh/.cc`。
 - 若需进一步扩展函数覆盖或增强 SRID 提取准确性，可根据运行日志中不稳定项与错误类别进行迭代优化。
