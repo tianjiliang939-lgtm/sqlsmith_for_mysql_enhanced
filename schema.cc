@@ -9,6 +9,7 @@ using namespace std;
 using namespace pqxx;
 
 void schema::generate_indexes() {
+  // 默认安全实现（最小侵入）：轻量遍历结构，预构建索引映射，保持现有行为与后续扩展兼容
 
   cerr << "Generating indexes...";
 
@@ -16,34 +17,34 @@ void schema::generate_indexes() {
     assert(type);
     for(auto &r: aggregates) {
       if (type->consistent(r.restype))
-	      aggregates_returning_type[type].push_back(&r);
+              aggregates_returning_type[type].push_back(&r);
     }
 
     for(auto &r: routines) {
       if (!type->consistent(r.restype))
-	continue;
+        continue;
       routines_returning_type[type].push_back(&r);
       if(!r.argtypes.size())
-	      parameterless_routines_returning_type[type].push_back(&r);
+              parameterless_routines_returning_type[type].push_back(&r);
     }
     
     for (auto &t: tables) {
       for (auto &c: t.columns()) {
-	if (type->consistent(c.type)) {
-	  tables_with_columns_of_type[type].push_back(&t);
-	  break;
-	}
+        if (type->consistent(c.type)) {
+          tables_with_columns_of_type[type].push_back(&t);
+          break;
+        }
       }
     }
 
     for (auto &concrete: types) {
       if (type->consistent(concrete))
-	      concrete_type[type].push_back(concrete);
+              concrete_type[type].push_back(concrete);
     }
 
     for (auto &o: operators) {
       if (type->consistent(o.result))
-	      operators_returning_type[type].push_back(&o);
+              operators_returning_type[type].push_back(&o);
     }
   }
 
