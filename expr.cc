@@ -1567,5 +1567,3 @@ std::string expr_utils::make_diversified_for_alias_column(prod* p, const std::st
 
   return oss.str();
 }
-
-// (removed)
