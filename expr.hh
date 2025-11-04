@@ -4,12 +4,37 @@
 #ifndef EXPR_HH
 #define EXPR_HH
 
+
 #include "prod.hh"
+#include "relmodel.hh"
+#include "schema.hh"
+#include "random.hh"
 #include <string>
+#include <memory>
+#include <vector>
+#include <ostream>
+#include <utility>
 
 using std::shared_ptr;
 using std::vector;
 using std::string;
+
+// 稳定类型族枚举：避免在输出阶段依赖易失字符串
+enum class SafeTypeFamily {
+  Unknown = 0,
+  Numeric,
+  String,
+  Date,
+  Time,
+  Datetime,
+  Timestamp,
+  Json,
+  Geometry
+};
+
+// 统一在输出阶段使用“稳定类型枚举/指针身份映射 + 按值拷贝”
+SafeTypeFamily safe_type_family(sqltype* t);
+std::string safe_type_name(sqltype* t);
 
 struct value_expr: prod {
   sqltype *type;
@@ -81,8 +106,8 @@ struct coalesce : value_expr {
 struct nullif : coalesce {
  virtual ~nullif() { };
      nullif(prod *p, sqltype *type_constraint = 0)
-	  : coalesce(p, type_constraint, "nullif")
-	  { };
+          : coalesce(p, type_constraint, "nullif")
+          { };
 };
 
 struct bool_expr : value_expr {
@@ -96,7 +121,8 @@ struct truth_value : bool_expr {
   const char *op;
   virtual void out(std::ostream &out) { out << op; }
   truth_value(prod *p) : bool_expr(p) {
-    op = ( (d6() < 4) ? scope->schema->true_literal : scope->schema->false_literal);
+    bool allow_false = (scope && scope->schema) ? scope->schema->feature.allow_false_cond : true;
+    op = (allow_false ? ((d6() < 4) ? scope->schema->true_literal : scope->schema->false_literal) : scope->schema->true_literal);
   }
 };
 
@@ -170,12 +196,25 @@ struct comparison_op : bool_binop {
 };
 
 struct window_function : value_expr {
+  // 最小工具：在当前作用域生成一个类型安全的“列条件”文本（用于 EXISTS 子查询作用域补齐）
+  // 根据首个安全列类型族选择谓词：
+  // - 默认：col = col（数值/字符/时间等）
+  // - JSON/几何：col IS NOT NULL（安全且类型兼容）
+  static std::string make_column_predicate_for_scope(prod* p, int used_nullness = 0);
+  // 多样化生成：轮换操作符类、打乱样本集合；避免重复签名
+  static std::string make_diversified_predicate_for_scope(prod* p, int used_nullness = 0);
+  static std::string make_diversified_for_alias_column(prod* p, const std::string& alias, const std::string& col_name,
+                                                       sqltype* col_type, int used_nullness,
+                                                       const std::string& avoid_opclass, const std::string& avoid_values_key);
+
   virtual void out(std::ostream &out);
   virtual ~window_function() { }
   window_function(prod *p, sqltype *type_constraint);
   vector<shared_ptr<column_reference> > partition_by;
   vector<shared_ptr<column_reference> > order_by;
   shared_ptr<funcall> aggregate;
+  // 对不兼容的窗口聚合进行降级（不打印 OVER）
+  bool suppress_over = false; 
   static bool allowed(prod *pprod);
   virtual void accept(prod_visitor *v) {
     v->visit(this);
@@ -187,4 +226,17 @@ struct window_function : value_expr {
   }
 };
 
+// 轻量 helper：保障窗口 OVER 子句非空（不受查询级 ORDER BY 开关影响），最小改动
+void ensure_non_empty_window_spec(window_function* wf);
+
 #endif
+
+// ---- 辅助自由函数声明（供 grammar.cc 调用） ----
+namespace expr_utils {
+  std::string make_diversified_predicate_for_scope(prod* p, int used_nullness);
+  std::string make_diversified_for_alias_column(prod* p, const std::string& alias, const std::string& col_name,
+                                                sqltype* col_type, int used_nullness,
+                                                const std::string& avoid_opclass, const std::string& avoid_values_key);
+  // 语句级清理：移除当前语句键下的 IN 集合指纹，避免跨语句复用导致的潜在问题（最小改动）
+  void clear_inset_registry_for_stmt_key(const void* key);
+}
