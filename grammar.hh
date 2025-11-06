@@ -62,7 +62,7 @@ struct lateral_subquery : table_subquery {
 struct join_cond : prod {
      static shared_ptr<join_cond> factory(prod *p, table_ref &lhs, table_ref &rhs);
      join_cond(prod *p, table_ref &lhs, table_ref &rhs)
-	  : prod(p) { (void) lhs; (void) rhs;}
+          : prod(p) { (void) lhs; (void) rhs;}
 };
 
 struct simple_join_cond : join_cond {
@@ -77,8 +77,8 @@ struct expr_join_cond : join_cond {
      expr_join_cond(prod *p, table_ref &lhs, table_ref &rhs);
      virtual void out(std::ostream &out);
      virtual void accept(prod_visitor *v) {
-	  search->accept(v);
-	  v->visit(this);
+          search->accept(v);
+          v->visit(this);
      }
 };
 
@@ -103,6 +103,8 @@ struct joined_table : table_ref {
 
 struct from_clause : prod {
   std::vector<shared_ptr<table_ref> > reflist;
+  // 关键字拼接防重：确保每个语句只输出一次 FROM
+  bool printed = false; 
   virtual void out(std::ostream &out);
   from_clause(prod *p);
   ~from_clause() { }
@@ -127,11 +129,21 @@ struct select_list : prod {
   }
 };
 
+// HAVING 生成上下文守卫：用于允许在 HAVING 中生成聚合（不影响 WHERE/ON/GROUP BY 的限制）
+struct having_guard : prod {
+  having_guard(prod* parent) : prod(parent) { }
+  virtual ~having_guard() { }
+  virtual void out(std::ostream &out) { (void)out; }
+};
+
 struct query_spec : prod {
   std::string set_quantifier;
   shared_ptr<struct from_clause> from_clause;
   shared_ptr<struct select_list> select_list;
   shared_ptr<bool_expr> search;
+  // 自动分组与 HAVING：当 SELECT 存在聚合时填充
+  std::vector<shared_ptr<value_expr>> group_by_exprs;
+  shared_ptr<bool_expr> having;
   std::string limit_clause;
   struct scope myscope;
   virtual void out(std::ostream &out);
@@ -170,7 +182,7 @@ struct modifying_stmt : prod {
   table *victim;
   struct scope myscope;
   modifying_stmt(prod *p, struct scope *s, struct table *victim = 0);
-//   shared_ptr<modifying_stmt> modifying_stmt::factory(prod *p, struct scope *s);
+  // shared_ptr<modifying_stmt> modifying_stmt::factory(prod *p, struct scope *s);
   virtual void pick_victim();
 };
 
@@ -214,6 +226,20 @@ struct insert_stmt : modifying_stmt {
   }
 };
 
+struct insert_returning : insert_stmt {
+  shared_ptr<struct select_list> select_list;
+  insert_returning(prod *p, struct scope *s, table *victim = 0);
+  virtual void out(std::ostream &out) {
+    insert_stmt::out(out);
+    out << std::endl << "returning " << *select_list;
+  }
+  virtual void accept(prod_visitor *v) {
+    v->visit(this);
+    for (auto p : value_exprs) p->accept(v);
+    select_list->accept(v);
+  }
+};
+
 struct set_list : prod {
   vector<shared_ptr<value_expr> > value_exprs;
   vector<string> names;
@@ -244,6 +270,20 @@ struct upsert_stmt : insert_stmt {
   virtual ~upsert_stmt() {  }
 };
 
+struct upsert_returning : upsert_stmt {
+  shared_ptr<struct select_list> select_list;
+  upsert_returning(prod *p, struct scope *s, table *v = 0);
+  virtual void out(std::ostream &out) {
+    upsert_stmt::out(out);
+    out << std::endl << "returning " << *select_list;
+  }
+  virtual void accept(prod_visitor *v) {
+    v->visit(this);
+    upsert_stmt::accept(v);
+    select_list->accept(v);
+  }
+};
+
 struct update_stmt : modifying_stmt {
   shared_ptr<bool_expr> search;
   shared_ptr<struct set_list> set_list;
@@ -259,7 +299,7 @@ struct update_stmt : modifying_stmt {
 struct when_clause : prod {
   bool matched;
   shared_ptr<bool_expr> condition;  
-//   shared_ptr<prod> merge_action;
+  // shared_ptr<prod> merge_action;
   when_clause(struct merge_stmt *p);
   virtual ~when_clause() { }
   static shared_ptr<when_clause> factory(struct merge_stmt *p);
@@ -293,6 +333,23 @@ struct merge_stmt : modifying_stmt {
   virtual ~merge_stmt() {  }
   virtual void out(std::ostream &out);
   virtual void accept(prod_visitor *v);
+};
+
+struct merge_returning : merge_stmt {
+  shared_ptr<struct select_list> select_list;
+  merge_returning(prod *p, struct scope *s, table *victim = 0);
+  virtual void out(std::ostream &out) {
+    merge_stmt::out(out);
+    out << std::endl << "returning " << *select_list;
+  }
+  virtual void accept(prod_visitor *v) {
+    v->visit(this);
+    target_table_->accept(v);
+    data_source->accept(v);
+    join_condition->accept(v);
+    for (auto p : clauselist) p->accept(v);
+    select_list->accept(v);
+  }
 };
 
 struct update_returning : update_stmt {
