@@ -23,6 +23,9 @@ extern "C" {
 #include "gitrev.h"
 #include "impedance.hh"
 #include "random.hh"
+#include "expr.hh"
+#include "json_expr.hh"
+#include "spatial_expr.hh"
 
 using namespace std;
 using namespace pqxx;
@@ -32,12 +35,21 @@ struct stats_visitor : prod_visitor {
   int maxlevel = 0;
   long retries = 0;
   map<const char*, long> production_stats;
+  map<string, long> function_calls;
+  long json_nodes = 0;
+  long spatial_nodes = 0;
   virtual void visit(struct prod *p) {
     nodes++;
     if (p->level > maxlevel)
       maxlevel = p->level;
     production_stats[typeid(*p).name()]++;
     retries += p->retries;
+    // 统计函数分布与 JSON/Spatial 节点
+    if (auto f = dynamic_cast<funcall*>(p)) {
+      if (f->proc) function_calls[f->proc->name]++;
+    }
+    if (dynamic_cast<json_expr*>(p)) json_nodes++;
+    if (dynamic_cast<spatial_expr*>(p)) spatial_nodes++;
   }
   void report() {
     cerr << "production statistics" << endl;
@@ -45,11 +57,20 @@ struct stats_visitor : prod_visitor {
     for (auto p : production_stats)
       report.push_back(p);
     stable_sort(report.begin(), report.end(),
-		[](const pair<std::string, long> &a,
-		   const pair<std::string, long> &b)
-		{ return a.second > b.second; });
+                [](const pair<std::string, long> &a,
+                   const pair<std::string, long> &b)
+                { return a.second > b.second; });
     for (auto p : report) {
       cerr << p.second << "\t" << p.first << endl;
+    }
+    cerr << "JSON nodes: " << json_nodes << ", Spatial nodes: " << spatial_nodes << endl;
+    // 函数分布前若干项
+    vector<pair<string,long>> freqs;
+    for (auto kv : function_calls) freqs.push_back(kv);
+    stable_sort(freqs.begin(), freqs.end(), [](const pair<string,long>& a, const pair<string,long>& b){return a.second > b.second;});
+    cerr << "top functions:" << endl;
+    for (size_t i = 0; i < freqs.size() && i < 20; ++i) {
+      cerr << freqs[i].second << "\t" << freqs[i].first << endl;
     }
   }
 };
@@ -69,19 +90,19 @@ void stats_collecting_logger::generated(prod &query)
 void cerr_logger::report()
 {
     cerr << endl << "queries: " << queries << endl;
-// 	 << " (" << 1000.0*query_count/gen_time.count() << " gen/s, "
-// 	 << 1000.0*query_count/query_time.count() << " exec/s)" << endl;
+    //       << " (" << 1000.0*query_count/gen_time.count() << " gen/s, "
+    //       << 1000.0*query_count/query_time.count() << " exec/s)" << endl;
     cerr << "AST stats (avg): height = " << sum_height/queries
-	 << " nodes = " << sum_nodes/queries << endl;
+         << " nodes = " << sum_nodes/queries << endl;
 
     vector<pair<std::string, long> > report;
     for (auto e : errors) {
       report.push_back(e);
     }
     stable_sort(report.begin(), report.end(),
-		[](const pair<std::string, long> &a,
-		   const pair<std::string, long> &b)
-		{ return a.second > b.second; });
+                [](const pair<std::string, long> &a,
+                   const pair<std::string, long> &b)
+                { return a.second > b.second; });
     long err_count = 0;
     for (auto e : report) {
       err_count += e.second;
@@ -137,8 +158,8 @@ pqxx_logger::pqxx_logger(std::string target, std::string conninfo, struct schema
   w.exec("set application_name to '" PACKAGE "::log';");
 
   c->prepare("instance",
-	     "insert into instance (rev, target, hostname, version, seed) "
-	     "values ($1, $2, $3, $4, $5) returning id");
+             "insert into instance (rev, target, hostname, version, seed) "
+             "values ($1, $2, $3, $4, $5) returning id");
 
   char hostname[1024];
   gethostname(hostname, sizeof(hostname));
@@ -155,14 +176,14 @@ pqxx_logger::pqxx_logger(std::string target, std::string conninfo, struct schema
   id = r[0][0].as<long>(id);
 
   c->prepare("error",
-	     "insert into error (id, msg, query, sqlstate) "
-	     "values (" + to_string(id) + ", $1, $2, $3)");
+             "insert into error (id, msg, query, sqlstate) "
+             "values (" + to_string(id) + ", $1, $2, $3)");
 
   w.exec("insert into stat (id) values (" + to_string(id) + ")");
   c->prepare("stat",
-	     "update stat set generated=$1, level=$2, nodes=$3, updated=now() "
-	     ", retries = $4, impedance = $5 "
-	     "where id = " + to_string(id));
+             "update stat set generated=$1, level=$2, nodes=$3, updated=now() "
+             ", retries = $4, impedance = $5 "
+             "where id = " + to_string(id));
 
   w.commit();
 
@@ -196,4 +217,3 @@ void pqxx_logger::generated(prod &query)
     w.commit();
   }
 }
-
