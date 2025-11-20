@@ -55,3 +55,4 @@ filterdump:
 # 轻量化标志（-O0 -g -pipe），避免重复包含路径；AM_CPPFLAGS/CPPFLAGS 由项目统一管理。
 mysql.o: mysql.cc
         $(AM_V_CXX) $(CCACHE) $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) -Wall -Wextra -O0 -g -pipe -MT $@ -MD -MP -MF .deps/mysql.Tpo -c -o $@ $<
+
