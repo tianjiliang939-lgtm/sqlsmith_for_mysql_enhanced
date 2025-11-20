@@ -38,8 +38,8 @@ sudo apt-get install -y \
 
 ### 1. 使用 Autotools 构建（与原工程一致）
 ```bash
-cd sqlsmith-master-for-base-json-spatial
-autoreconf -i
+cd sqlsmith_for_mysql_enhanced-master
+autoreconf -fiv
 ./configure
 make
 ```
