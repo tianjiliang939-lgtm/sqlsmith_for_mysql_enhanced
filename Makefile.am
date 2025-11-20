@@ -38,21 +38,22 @@ EXTRA_DIST = gitrev.h dump.hh expr.hh grammar.hh log.hh prod.hh \
     dut.hh postgres.hh monetdb.hh mysql.hh log-v1.0-to-v1.2.sql boring_sqlstates.txt value_catalog.hh condition_builder.hh condition_generator.hh temp_dataset_adapter.hh ats_condition_adapter.hh
 
 gitrev.h: $(HEADERS) $(SOURCES)
-        -if git describe --exclude='debian*' --dirty --tags --always > /dev/null ; then \
-        echo "#define GITREV \"$$(git describe --exclude='debian*' --dirty --tags --always)\"" > $@ ;\
-        else \
-        echo "#define GITREV \"unreleased\"" > $@ ;\
-        fi
+	-if git describe --exclude='debian*' --dirty --tags --always > /dev/null ; then \
+	echo "#define GITREV \"$$(git describe --exclude='debian*' --dirty --tags --always)\"" > $@ ;\
+	else \
+	echo "#define GITREV \"unreleased\"" > $@ ;\
+	fi
 
 filterdump:
-        psql -Xc 'copy (select error from known) to stdout' |sort -u > known.txt
-        psql -Xc 'copy (select re from known_re) to stdout' |sort -u > known_re.txt
-        psql -Xc 'copy (select sqlstate from boring_sqlstates) to stdout' |sort -u > boring_sqlstates.txt
+	psql -Xc 'copy (select error from known) to stdout' |sort -u > known.txt
+	psql -Xc 'copy (select re from known_re) to stdout' |sort -u > known_re.txt
+	psql -Xc 'copy (select sqlstate from boring_sqlstates) to stdout' |sort -u > boring_sqlstates.txt
 
 .PHONY: filterdump
 
 # 显式编译规则：仅覆盖 mysql.o 的对象级编译，其他对象与链接保持原设置（包括 sanitizer）；
 # 轻量化标志（-O0 -g -pipe），避免重复包含路径；AM_CPPFLAGS/CPPFLAGS 由项目统一管理。
 mysql.o: mysql.cc
-        $(AM_V_CXX) $(CCACHE) $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) -Wall -Wextra -O0 -g -pipe -MT $@ -MD -MP -MF .deps/mysql.Tpo -c -o $@ $<
+	$(AM_V_CXX) $(CCACHE) $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) -Wall -Wextra -O0 -g -pipe -MT $@ -MD -MP -MF .deps/mysql.Tpo -c -o $@ $<
+
 
