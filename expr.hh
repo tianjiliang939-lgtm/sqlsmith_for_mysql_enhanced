@@ -172,9 +172,35 @@ struct bool_term : bool_binop {
   }
   bool_term(prod *p) : bool_binop(p)
   {
-    op = ((d6()<4) ? "or" : "and");
     lhs = bool_expr::factory(this);
     rhs = bool_expr::factory(this);
+    // 常量布尔与 AND/OR 组合策略：
+    // - 任一为 false → OR（避免 AND false 恒假）
+    // - 否则任一为 true → AND（避免 OR true 恒真）
+    // - 否则沿用原先随机选择
+    auto classify = [&](const shared_ptr<value_expr>& e)->int {
+      if (!e) return 0;
+      auto tv = dynamic_cast<truth_value*>(e.get());
+      if (!tv) return 0;
+      if (!scope || !scope->schema) return 0;
+      const char* tlit = scope->schema->true_literal;
+      const char* flit = scope->schema->false_literal;
+      const char* val  = tv->op;
+      if (!val) return 0;
+      std::string sval(val);
+      if (flit && sval == flit) return -1; // false
+      if (tlit && sval == tlit) return 1;  // true
+      return 0;
+    };
+    int lk = classify(lhs);
+    int rk = classify(rhs);
+    if (lk == -1 || rk == -1) {
+      op = "or";
+    } else if (lk == 1 || rk == 1) {
+      op = "and";
+    } else {
+      op = ((d6()<4) ? "or" : "and");
+    }
   }
 };
 
