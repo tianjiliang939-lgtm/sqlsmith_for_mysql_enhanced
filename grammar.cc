@@ -24,7 +24,9 @@ using namespace std;
 static inline bool supports_lateral(const schema* sch){
   if (!sch) return false;
   // 支持方言：PostgreSQL 与 MySQL 8.0（不依赖连接版本检查）
+#ifdef HAVE_LIBPQXX7
   if (dynamic_cast<const schema_pqxx*>(sch) != nullptr) return true;
+#endif
   if (sch->mysql_mode) return true;
   return false;
 }
@@ -635,10 +637,28 @@ void query_spec::out(std::ostream &out) {
   {
     ClauseBudget budget; ClauseContext ctx = make_clause_ctx(this);
     std::ostringstream oss; out_bool_expr_with_budget(oss, search.get(), budget, ctx, this);
-    __buf << "(" << oss.str() << ")";
+    std::string where_expr = oss.str();
+    __buf << "(" << where_expr << ")";
     if (!budget.has_column_cond || (!ctx.nearest_alias.empty() && !budget.has_nearest_column_cond)) {
       indent(__buf);
-      __buf << "and " << window_function::make_column_predicate_for_scope(this, budget.null_pred_count);
+      const char* tlit = (scope && scope->schema) ? scope->schema->true_literal : nullptr;
+      const char* flit = (scope && scope->schema) ? scope->schema->false_literal : nullptr;
+      std::string op = "and ";
+      if (flit || tlit) {
+        auto trim_copy = [](const std::string &s) {
+          size_t a = 0, b = s.size();
+          while (a < b && isspace((unsigned char)s[a])) ++a;
+          while (b > a && isspace((unsigned char)s[b-1])) --b;
+          return s.substr(a, b - a);
+        };
+        std::string trimmed = trim_copy(where_expr);
+        if (flit && trimmed == flit) {
+          op = "or ";
+        } else if (tlit && trimmed == tlit) {
+          op = "and ";
+        }
+      }
+      __buf << op << window_function::make_column_predicate_for_scope(this, budget.null_pred_count);
     }
   }
 
